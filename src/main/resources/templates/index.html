@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="pt-BR" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Validador de Documentos</title>
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+	<link rel="stylesheet" th:href="@{/css/styles.css}">
+</head>
+<body>
+	<main class="page-shell">
+		<section class="intro-panel" aria-label="Resumo do produto">
+			<nav class="topbar" aria-label="Navegacao principal">
+				<a class="brand" th:href="@{/}" aria-label="Inicio">
+					<span class="brand-mark">VD</span>
+					<span>Validador IA</span>
+				</a>
+				<div class="status-chip">
+					<span class="pulse"></span>
+					Analise assistida por IA
+				</div>
+			</nav>
+
+			<div class="hero-copy">
+				<p class="eyebrow">RG e CNH</p>
+				<h1>Conferencia documental em segundos.</h1>
+				<p class="subtitle">
+					Envie o documento do cliente e deixe a IA extrair nome, nascimento e CPF para apontar divergencias antes da aprovacao.
+				</p>
+			</div>
+
+			<div class="metric-strip" aria-label="Indicadores">
+				<div>
+					<strong>3</strong>
+					<span>campos verificados</span>
+				</div>
+				<div>
+					<strong>IA</strong>
+					<span>leitura visual</span>
+				</div>
+				<div>
+					<strong>LGPD</strong>
+					<span>sem persistir arquivo</span>
+				</div>
+			</div>
+		</section>
+
+		<section class="workspace">
+			<div class="form-panel">
+				<div class="section-heading">
+					<p>Nova validacao</p>
+					<h2>Dados informados pelo usuario</h2>
+				</div>
+
+				<div class="alert-list" th:if="${erros != null}">
+					<div class="alert" th:each="erro : ${erros}" th:text="${erro}">Erro</div>
+				</div>
+
+				<form class="validation-form" th:action="@{/validar}" method="post" enctype="multipart/form-data">
+					<label class="field">
+						<span>Nome completo</span>
+						<input type="text" name="nome" placeholder="Ex.: Maria Eduarda Santos"
+							th:value="${nomeInput != null ? nomeInput : dados.nome}" autocomplete="name" required>
+					</label>
+
+					<div class="field-grid">
+						<label class="field">
+							<span>Data de nascimento</span>
+							<input type="date" name="dataNascimento"
+								th:value="${dataNascimentoInput != null ? dataNascimentoInput : ''}" required>
+						</label>
+
+						<label class="field">
+							<span>CPF</span>
+							<input type="text" name="cpf" inputmode="numeric" maxlength="14" placeholder="000.000.000-00"
+								th:value="${cpfInput != null ? cpfInput : dados.cpf}" data-cpf required>
+						</label>
+					</div>
+
+					<label class="upload-zone" for="documento">
+						<input id="documento" type="file" name="documento" accept="application/pdf,image/png,image/jpeg,image/webp" required>
+						<span class="upload-icon" aria-hidden="true">
+							<svg viewBox="0 0 24 24" role="img">
+								<path d="M12 3v11m0-11 4 4m-4-4-4 4M5 14v4a3 3 0 0 0 3 3h8a3 3 0 0 0 3-3v-4"/>
+							</svg>
+						</span>
+						<span class="upload-copy">
+							<strong data-file-name>Anexe RG ou CNH</strong>
+							<small>PDF, PNG, JPG ou WEBP ate 10 MB</small>
+						</span>
+					</label>
+
+					<button class="submit-button" type="submit" data-submit>
+						<span class="button-icon" aria-hidden="true">
+							<svg viewBox="0 0 24 24" role="img">
+								<path d="m9 12 2 2 4-5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
+							</svg>
+						</span>
+						Validar documento
+					</button>
+				</form>
+			</div>
+
+			<aside class="result-panel" th:classappend="${resultado != null ? ' has-result status-' + resultado.status.name().toLowerCase() : ''}">
+				<div th:if="${resultado == null}" class="empty-state">
+					<div class="scan-frame" aria-hidden="true">
+						<span></span><span></span><span></span><span></span>
+					</div>
+					<p class="empty-kicker">Aguardando documento</p>
+					<h2>O laudo aparece aqui assim que a IA terminar a leitura.</h2>
+					<p>Campos confirmados, divergencias e itens nao localizados ficam organizados em um painel unico.</p>
+				</div>
+
+				<div th:if="${resultado != null}" class="result-content">
+					<div class="result-header">
+						<div>
+							<p class="result-kicker" th:text="${resultado.extraido.tipoDocumento}">CNH</p>
+							<h2 th:text="${resultado.status.titulo}">Dados confirmados</h2>
+						</div>
+						<span class="result-badge" th:text="${resultado.status.name()}">APROVADO</span>
+					</div>
+
+					<p class="result-summary" th:text="${resultado.resumo}">Resumo</p>
+
+					<div class="score-row" aria-label="Resumo dos campos">
+						<div>
+							<strong th:text="${resultado.camposConfirmados()}">0</strong>
+							<span>confirmados</span>
+						</div>
+						<div>
+							<strong th:text="${resultado.camposDivergentes()}">0</strong>
+							<span>divergentes</span>
+						</div>
+						<div>
+							<strong th:text="${resultado.extraido.confianca != null ? resultado.extraido.confianca + '%' : '0%'}">0%</strong>
+							<span>confianca IA</span>
+						</div>
+					</div>
+
+					<div class="comparison-list">
+						<article class="comparison-card" th:each="campo : ${resultado.campos}" th:classappend="${' field-' + campo.status.name().toLowerCase()}">
+							<header>
+								<span th:text="${campo.rotulo}">Nome</span>
+								<strong th:text="${campo.status.rotulo}">Confirmado</strong>
+							</header>
+							<div class="comparison-values">
+								<div>
+									<small>Informado</small>
+									<p th:text="${campo.informado}">Maria</p>
+								</div>
+								<div>
+									<small>Documento</small>
+									<p th:text="${campo.extraido}">Maria</p>
+								</div>
+							</div>
+							<footer th:text="${campo.detalhe}">Detalhe</footer>
+						</article>
+					</div>
+
+					<div class="analysis-meta">
+						<span>Analisado em</span>
+						<strong th:text="${resultado.analisadoEmFormatado()}">03/09/2026 14:00</strong>
+					</div>
+				</div>
+			</aside>
+		</section>
+	</main>
+
+	<script th:src="@{/js/app.js}"></script>
+</body>
+</html>
