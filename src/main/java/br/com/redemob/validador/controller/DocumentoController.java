@@ -18,6 +18,8 @@ import org.springframework.web.multipart.MultipartFile;
 @Controller
 public class DocumentoController {
 
+	private static final String INDEX = "index";
+
 	private final DocumentoAiValidationService validationService;
 
 	public DocumentoController(DocumentoAiValidationService validationService) {
@@ -27,7 +29,7 @@ public class DocumentoController {
 	@GetMapping("/")
 	public String index(Model model) {
 		model.addAttribute("dados", DadosInformados.vazio());
-		return "index";
+		return INDEX;
 	}
 
 	@PostMapping("/validar")
@@ -44,12 +46,12 @@ public class DocumentoController {
 
 		if (!erros.isEmpty()) {
 			model.addAttribute("erros", erros);
-			return "index";
+			return INDEX.concat("?error=true");
 		}
 
 		ResultadoValidacao resultado = this.validationService.validar(dados, documento);
 		model.addAttribute("resultado", resultado);
-		return "index";
+		return INDEX;
 	}
 
 	private List<String> validarEntrada(DadosInformados dados, MultipartFile documento) {
