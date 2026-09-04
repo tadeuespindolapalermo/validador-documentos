@@ -18,7 +18,7 @@ if (cpfInput) {
 if (fileInput && fileName && uploadZone) {
 	fileInput.addEventListener("change", () => {
 		const file = fileInput.files?.[0];
-		fileName.textContent = file ? file.name : "Anexe RG ou CNH";
+		fileName.textContent = file ? file.name : "Anexe RG, CNH ou CIN";
 		uploadZone.classList.toggle("is-active", Boolean(file));
 	});
 }

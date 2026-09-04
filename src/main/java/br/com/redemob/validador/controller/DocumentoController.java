@@ -65,7 +65,7 @@ public class DocumentoController {
 			erros.add("Informe um CPF com 11 digitos.");
 		}
 		if (documento == null || documento.isEmpty()) {
-			erros.add("Anexe uma foto ou PDF do RG/CNH.");
+			erros.add("Anexe uma foto ou PDF do RG, CNH ou CIN.");
 		}
 		else if (!tipoAceito(documento)) {
 			erros.add("Use apenas PDF, PNG, JPG, JPEG ou WEBP.");
