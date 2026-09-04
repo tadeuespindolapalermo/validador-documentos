@@ -18,9 +18,13 @@ $env:OPENAI_API_KEY="sua-chave-openai"
 $env:COMPREFACE_BASE_URL="http://localhost:8000"
 $env:COMPREFACE_API_KEY="api-key-do-servico-de-verificacao"
 $env:COMPREFACE_THRESHOLD="0.70"
+$env:COMPREFACE_DET_PROB_THRESHOLD="0.95"
+$env:COMPREFACE_BIDIRECTIONAL="true"
 ```
 
 `COMPREFACE_THRESHOLD` aceita `0.70` ou `70`. O valor padrao do projeto e `0.70`, ou seja, 70% de similaridade facial.
+`COMPREFACE_DET_PROB_THRESHOLD` exige que o CompreFace tenha alta confianca de que localizou uma face real antes de calcular o match.
+`COMPREFACE_BIDIRECTIONAL=true` faz o sistema comparar nos dois sentidos e considerar o menor score, reduzindo falso positivo quando o documento inteiro contem regioes que podem confundir o detector.
 
 ## Como subir o CompreFace local com Docker
 

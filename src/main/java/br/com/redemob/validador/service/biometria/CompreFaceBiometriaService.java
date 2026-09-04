@@ -11,7 +11,6 @@ import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalDouble;
 
@@ -71,14 +70,17 @@ public class CompreFaceBiometriaService implements BiometriaService {
 
 	private final boolean testarRotacoes;
 
+	private final boolean comparacaoBidirecional;
+
 	public CompreFaceBiometriaService(RestClient.Builder restClientBuilder,
 			ObjectProvider<JsonMapper> jsonMapperProvider,
 			@Value("${app.biometria.compreface.base-url:http://localhost:8000}") String baseUrl,
 			@Value("${app.biometria.compreface.api-key:}") String apiKey,
 			@Value("${app.biometria.compreface.threshold:0.70}") double threshold,
-			@Value("${app.biometria.compreface.det-prob-threshold:0.80}") double detProbThreshold,
+			@Value("${app.biometria.compreface.det-prob-threshold:0.95}") double detProbThreshold,
 			@Value("${app.biometria.compreface.limit:1}") int limit,
-			@Value("${app.biometria.compreface.test-rotations:true}") boolean testarRotacoes) {
+			@Value("${app.biometria.compreface.test-rotations:true}") boolean testarRotacoes,
+			@Value("${app.biometria.compreface.bidirectional:true}") boolean comparacaoBidirecional) {
 		String url = StringUtils.hasText(baseUrl) ? baseUrl : "http://localhost:8000";
 		this.restClient = restClientBuilder.baseUrl(url).build();
 		this.jsonMapper = jsonMapperProvider.getIfAvailable(() -> JsonMapper.builder().build());
@@ -87,6 +89,7 @@ public class CompreFaceBiometriaService implements BiometriaService {
 		this.detProbThreshold = detProbThreshold;
 		this.limit = Math.max(1, limit);
 		this.testarRotacoes = testarRotacoes;
+		this.comparacaoBidirecional = comparacaoBidirecional;
 	}
 
 	@Override
@@ -100,8 +103,8 @@ public class CompreFaceBiometriaService implements BiometriaService {
 		}
 
 		try {
-			List<ImagemBiometria> fotosUsuario = prepararVariacoes(foto, "foto-usuario");
-			List<ImagemBiometria> documentos = prepararVariacoes(documento, "documento");
+			List<ImagemBiometria> fotosUsuario = prepararVariacoes(foto, "foto-usuario", false);
+			List<ImagemBiometria> documentos = prepararVariacoes(documento, "documento", this.testarRotacoes);
 			Optional<ComparacaoFace> melhor = compararVariacoes(fotosUsuario, documentos);
 
 			if (melhor.isEmpty()) {
@@ -143,13 +146,24 @@ public class CompreFaceBiometriaService implements BiometriaService {
 		for (ImagemBiometria fotoUsuario : fotosUsuario) {
 			for (ImagemBiometria documento : documentos) {
 				try {
-					OptionalDouble similaridade = chamarCompreFace(fotoUsuario, documento);
-					if (similaridade.isPresent()) {
-						comparacoes.add(new ComparacaoFace(similaridade.getAsDouble()));
+					OptionalDouble similaridadeDireta = chamarCompreFace(fotoUsuario, documento);
+					if (similaridadeDireta.isEmpty()) {
+						continue;
 					}
+
+					double similaridade = similaridadeDireta.getAsDouble();
+					if (this.comparacaoBidirecional) {
+						OptionalDouble similaridadeInversa = chamarCompreFace(documento, fotoUsuario);
+						if (similaridadeInversa.isEmpty()) {
+							continue;
+						}
+						similaridade = Math.min(similaridade, similaridadeInversa.getAsDouble());
+					}
+
+					comparacoes.add(new ComparacaoFace(similaridade));
 				}
 				catch (RestClientResponseException ex) {
-					if (ex.getStatusCode().value() == 401 || ex.getStatusCode().value() == 403) {
+					if (erroAutenticacao(ex)) {
 						throw ex;
 					}
 					log.debug("CompreFace nao comparou uma variacao de imagem. Status: {}", ex.getStatusCode());
@@ -170,7 +184,7 @@ public class CompreFaceBiometriaService implements BiometriaService {
 				.queryParam("limit", this.limit)
 				.queryParam("prediction_count", 1)
 				.queryParam("det_prob_threshold", this.detProbThreshold)
-				.queryParam("status", true)
+				.queryParam("status", false)
 				.build())
 			.header("x-api-key", this.apiKey)
 			.contentType(MediaType.MULTIPART_FORM_DATA)
@@ -181,7 +195,7 @@ public class CompreFaceBiometriaService implements BiometriaService {
 		if (!StringUtils.hasText(resposta)) {
 			return OptionalDouble.empty();
 		}
-		return maiorSimilaridade(this.jsonMapper.readTree(resposta));
+		return maiorSimilaridadeFaceMatches(this.jsonMapper.readTree(resposta));
 	}
 
 	private HttpEntity<ByteArrayResource> arquivoMultipart(ImagemBiometria imagem) {
@@ -197,9 +211,10 @@ public class CompreFaceBiometriaService implements BiometriaService {
 		return new HttpEntity<>(resource, headers);
 	}
 
-	private List<ImagemBiometria> prepararVariacoes(MultipartFile arquivo, String prefixo) throws IOException {
+	private List<ImagemBiometria> prepararVariacoes(MultipartFile arquivo, String prefixo, boolean permitirRotacoes)
+			throws IOException {
 		BufferedImage imagem = imagemBase(arquivo);
-		List<Integer> rotacoes = this.testarRotacoes ? ROTACOES : List.of(0);
+		List<Integer> rotacoes = permitirRotacoes ? ROTACOES : List.of(0);
 		List<ImagemBiometria> variacoes = new ArrayList<>();
 		for (Integer rotacao : rotacoes) {
 			BufferedImage preparada = redimensionarSeNecessario(converterParaRgb(rotacionar(imagem, rotacao)));
@@ -347,29 +362,33 @@ public class CompreFaceBiometriaService implements BiometriaService {
 		}
 	}
 
-	private OptionalDouble maiorSimilaridade(JsonNode node) {
+	private OptionalDouble maiorSimilaridadeFaceMatches(JsonNode node) {
 		List<Double> valores = new ArrayList<>();
-		coletarSimilaridades(node, valores);
+		JsonNode resultado = node == null ? null : node.get("result");
+		if (resultado == null || !resultado.isArray() || resultado.size() != 1) {
+			return OptionalDouble.empty();
+		}
+
+		for (JsonNode item : resultado) {
+			if (item.get("source_image_face") == null) {
+				continue;
+			}
+			JsonNode matches = item.get("face_matches");
+			if (matches == null || !matches.isArray()) {
+				continue;
+			}
+			for (JsonNode match : matches) {
+				JsonNode similarity = match.get("similarity");
+				if (similarity != null && similarity.isNumber()) {
+					valores.add(normalizarSimilaridade(similarity.asDouble()));
+				}
+			}
+		}
 		return valores.stream().mapToDouble(Double::doubleValue).max();
 	}
 
-	private void coletarSimilaridades(JsonNode node, List<Double> valores) {
-		if (node == null || node.isNull()) {
-			return;
-		}
-		if (node.isObject()) {
-			for (Map.Entry<String, JsonNode> entry : node.properties()) {
-				if ("similarity".equalsIgnoreCase(entry.getKey()) && entry.getValue().isNumber()) {
-					valores.add(normalizarSimilaridade(entry.getValue().asDouble()));
-				}
-				coletarSimilaridades(entry.getValue(), valores);
-			}
-		}
-		else if (node.isArray()) {
-			for (JsonNode child : node) {
-				coletarSimilaridades(child, valores);
-			}
-		}
+	private boolean erroAutenticacao(RestClientResponseException ex) {
+		return ex.getStatusCode().value() == 401 || ex.getStatusCode().value() == 403;
 	}
 
 	private double normalizarSimilaridade(double valor) {
