@@ -18,11 +18,14 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import br.com.redemob.validador.model.CampoComparado;
+import br.com.redemob.validador.model.BiometriaDocumento;
+import br.com.redemob.validador.model.DadosDocumentoExtraidoIa;
 import br.com.redemob.validador.model.DadosExtraidosDocumento;
 import br.com.redemob.validador.model.DadosInformados;
 import br.com.redemob.validador.model.ResultadoStatus;
 import br.com.redemob.validador.model.ResultadoValidacao;
 import br.com.redemob.validador.model.StatusCampo;
+import br.com.redemob.validador.service.biometria.BiometriaService;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.content.Media;
@@ -60,7 +63,7 @@ public class DocumentoAiValidationService {
 		- confianca: numero inteiro de 0 a 100 indicando confiança geral da leitura
 		- observacoes: observações curtas sobre baixa qualidade, campo ausente ou ambiguidade
 	
-		Se o documento estiver de cabeca para baixo, rotacionado ou inclinado, leia mesmo assim quando os dados estiverem visiveis.
+		Se o documento estiver de cabeça para baixo, rotacionado ou inclinado, leia mesmo assim quando os dados estiverem visiveis.
 		Responda apenas o objeto JSON solicitado pelo schema.
 		""";
 
@@ -78,15 +81,18 @@ public class DocumentoAiValidationService {
 
 	private final String openAiApiKey;
 
+	private final BiometriaService biometriaService;
+
 	public DocumentoAiValidationService(ObjectProvider<ChatClient.Builder> chatClientBuilder,
 			@Value("${spring.ai.model.chat:}") String chatModel,
-			@Value("${spring.ai.openai.api-key:}") String openAiApiKey) {
+			@Value("${spring.ai.openai.api-key:}") String openAiApiKey, BiometriaService biometriaService) {
 		this.chatClientBuilder = chatClientBuilder;
 		this.chatModel = chatModel;
 		this.openAiApiKey = openAiApiKey;
+		this.biometriaService = biometriaService;
 	}
 
-	public ResultadoValidacao validar(DadosInformados informado, MultipartFile documento) {
+	public ResultadoValidacao validar(DadosInformados informado, MultipartFile documento, MultipartFile foto) {
 		ChatClient.Builder builder = this.chatClientBuilder.getIfAvailable();
 		if (builder == null) {
 			return ResultadoValidacao.erro(informado,
@@ -98,7 +104,7 @@ public class DocumentoAiValidationService {
 		}
 
 		try {
-			DadosExtraidosDocumento extraido = extrairDados(builder.build(), documento);
+			DadosExtraidosDocumento extraido = extrairDados(builder.build(), documento, foto);
 			return comparar(informado, extraido);
 		}
 		catch (Exception ex) {
@@ -108,7 +114,7 @@ public class DocumentoAiValidationService {
 		}
 	}
 
-	private DadosExtraidosDocumento extrairDados(ChatClient chatClient, MultipartFile documento) throws IOException {
+	private DadosExtraidosDocumento extrairDados(ChatClient chatClient, MultipartFile documento, MultipartFile foto) throws IOException {
 		MimeType mimeType = MimeType.valueOf(Optional.ofNullable(documento.getContentType()).orElse("application/pdf"));
 		ByteArrayResource resource = new ByteArrayResource(documento.getBytes()) {
 			@Override
@@ -118,12 +124,15 @@ public class DocumentoAiValidationService {
 			}
 		};
 
-		return chamarIaJson(chatClient, new Media(mimeType, resource)).orElse(DadosExtraidosDocumento.vazio());
+		DadosDocumentoExtraidoIa extraido = chamarIaJson(chatClient, new Media(mimeType, resource))
+			.orElse(DadosDocumentoExtraidoIa.vazio());
+		BiometriaDocumento biometria = this.biometriaService.comparar(documento, foto);
+		return extraido.comBiometria(biometria);
 	}
 
-	private Optional<DadosExtraidosDocumento> chamarIaJson(ChatClient chatClient, Media documento) {
-		BeanOutputConverter<DadosExtraidosDocumento> converter = new BeanOutputConverter<>(
-				DadosExtraidosDocumento.class);
+	private Optional<DadosDocumentoExtraidoIa> chamarIaJson(ChatClient chatClient, Media documento) {
+		BeanOutputConverter<DadosDocumentoExtraidoIa> converter = new BeanOutputConverter<>(
+				DadosDocumentoExtraidoIa.class);
 		String resposta = chatClient.prompt()
 			.system(SYSTEM_PROMPT)
 			.options(opcoesDoModelo())
@@ -172,6 +181,7 @@ public class DocumentoAiValidationService {
 		campos.add(compararNome(informado.nome(), extraido.nome()));
 		campos.add(compararData(informado.dataNascimento(), extraido.dataNascimento()));
 		campos.add(compararCpf(informado.cpf(), extraido.cpf()));
+		campos.add(compararBiometria(extraido.biometria()));
 
 		ResultadoStatus status = calcularStatus(campos);
 		String resumo = montarResumo(status, extraido);
@@ -228,6 +238,22 @@ public class DocumentoAiValidationService {
 				igual ? "CPF confirmado no documento." : "CPF informado diferente do CPF extraido.");
 	}
 
+	private CampoComparado compararBiometria(BiometriaDocumento biometria) {
+		BiometriaDocumento bio = biometria == null ? BiometriaDocumento.inconclusiva() : biometria;
+		String percentual = bio.confiancaSegura() + "%";
+
+		if (bio.match()) {
+			return new CampoComparado("Biometria facial", "Foto enviada", "Match facial " + percentual,
+					StatusCampo.CONFIRMADO, bio.observacoes());
+		}
+		if (bio.divergente()) {
+			return new CampoComparado("Biometria facial", "Foto enviada", "Similaridade " + percentual,
+					StatusCampo.DIVERGENTE, bio.observacoes());
+		}
+		return new CampoComparado("Biometria facial", "Foto enviada", "Nao verificado", StatusCampo.NAO_VERIFICADO,
+				bio.observacoes());
+	}
+
 	private ResultadoStatus calcularStatus(List<CampoComparado> campos) {
 		if (campos.stream().anyMatch(campo -> campo.status() == StatusCampo.DIVERGENTE)) {
 			return ResultadoStatus.DIVERGENTE;
@@ -245,11 +271,12 @@ public class DocumentoAiValidationService {
 
 		return switch (status) {
 			case APROVADO -> "Os dados informados conferem com o " + tipo + ". Confianca da leitura: " + confianca
-					+ "%." + observacoes;
+					+ "%. Biometria facial confirmada." + observacoes;
 			case DIVERGENTE -> "Foram encontradas divergencias entre o cadastro e o " + tipo
-					+ ". Confianca da leitura: " + confianca + "%." + observacoes;
+					+ ". Confira os dados textuais e o match facial. Confianca da leitura: " + confianca + "%."
+					+ observacoes;
 			case INCONCLUSIVO -> "Alguns campos nao foram localizados no " + tipo
-					+ ". Reenvie uma imagem mais nitida ou valide manualmente. Confianca da leitura: " + confianca
+					+ " ou a biometria nao foi confirmada. Reenvie imagens mais nitidas ou valide manualmente. Confianca da leitura: " + confianca
 					+ "%." + observacoes;
 			case ERRO -> ResultadoStatus.ERRO.descricao();
 		};

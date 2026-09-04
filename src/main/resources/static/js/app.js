@@ -1,7 +1,4 @@
 const cpfInput = document.querySelector("[data-cpf]");
-const fileInput = document.querySelector("#documento");
-const fileName = document.querySelector("[data-file-name]");
-const uploadZone = document.querySelector(".upload-zone");
 const submitButton = document.querySelector("[data-submit]");
 const form = document.querySelector(".validation-form");
 const loadingOverlay = document.querySelector("[data-loading-overlay]");
@@ -17,13 +14,21 @@ if (cpfInput) {
 	});
 }
 
-if (fileInput && fileName && uploadZone) {
+document.querySelectorAll(".upload-zone").forEach((uploadZone) => {
+	const fileInput = uploadZone.querySelector("input[type='file']");
+	const fileName = uploadZone.querySelector("[data-file-name]");
+	const defaultText = fileName?.dataset.fileDefault || fileName?.textContent || "";
+
+	if (!fileInput || !fileName) {
+		return;
+	}
+
 	fileInput.addEventListener("change", () => {
 		const file = fileInput.files?.[0];
-		fileName.textContent = file ? file.name : "Anexe RG, CNH ou CIN";
+		fileName.textContent = file ? file.name : defaultText;
 		uploadZone.classList.toggle("is-active", Boolean(file));
 	});
-}
+});
 
 if (form && submitButton) {
 	form.addEventListener("submit", () => {
@@ -33,7 +38,7 @@ if (form && submitButton) {
 
 		submitButton.classList.add("is-loading");
 		submitButton.disabled = true;
-		submitButton.textContent = "Analisando documento...";
+		submitButton.textContent = "Analisando documento e biometria...";
 		document.body.classList.add("is-validating");
 
 		if (loadingOverlay) {

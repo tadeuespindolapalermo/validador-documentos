@@ -4,7 +4,8 @@ public enum StatusCampo {
 
 	CONFIRMADO("Confirmado"),
 	DIVERGENTE("Divergente"),
-	NAO_LOCALIZADO("Nao localizado");
+	NAO_LOCALIZADO("Nao localizado"),
+	NAO_VERIFICADO("Nao verificado");
 
 	private final String rotulo;
 

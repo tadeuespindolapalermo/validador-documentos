@@ -27,18 +27,18 @@
 				<p class="eyebrow">RG, CNH e CIN</p>
 				<h1>Conferencia documental em segundos.</h1>
 				<p class="subtitle">
-					Envie o documento do cliente e deixe a IA extrair nome, nascimento e CPF para apontar divergencias antes da aprovacao.
+					Envie o documento e a foto do cliente para validar dados cadastrais e confirmar o match facial antes da aprovacao.
 				</p>
 			</div>
 
 			<div class="metric-strip" aria-label="Indicadores">
 				<div>
-					<strong>3</strong>
-					<span>campos verificados</span>
+					<strong>4</strong>
+					<span>validacoes cruzadas</span>
 				</div>
 				<div>
 					<strong>IA</strong>
-					<span>leitura visual</span>
+					<span>documento + face</span>
 				</div>
 				<div>
 					<strong>LGPD</strong>
@@ -80,15 +80,39 @@
 					</div>
 
 					<label class="upload-zone" for="documento">
-						<input id="documento" type="file" name="documento" accept="application/pdf,image/png,image/jpeg,image/webp" required>
+						<input id="documento" type="file" name="documento" accept="application/pdf,image/png,image/jpeg" required>
 						<span class="upload-icon" aria-hidden="true">
 							<svg viewBox="0 0 24 24" role="img">
 								<path d="M12 3v11m0-11 4 4m-4-4-4 4M5 14v4a3 3 0 0 0 3 3h8a3 3 0 0 0 3-3v-4"/>
 							</svg>
 						</span>
 						<span class="upload-copy">
-							<strong data-file-name>Anexe RG, CNH ou CIN</strong>
-							<small>PDF, PNG, JPG ou WEBP ate 10 MB</small>
+							<strong data-file-name data-file-default="Anexe RG, CNH ou CIN">Anexe RG, CNH ou CIN</strong>
+							<small>PDF, PNG ou JPG ate 8 MB</small>
+						</span>
+					</label>
+
+					<label class="upload-zone upload-zone-photo" for="foto">
+						<input id="foto" type="file" name="foto" accept="image/png,image/jpeg" required>
+						<span class="upload-icon" aria-hidden="true">
+							<svg viewBox="0 0 24 24" role="img">
+								<path d="M8 11a4 4 0 1 0 8 0 4 4 0 0 0-8 0Z"/>
+								<path d="M4 21a8 8 0 0 1 16 0"/>
+								<path d="m17 5 2 2 3-4"/>
+							</svg>
+						</span>
+						<span class="upload-copy">
+							<strong data-file-name data-file-default="Anexe a foto do usuario">Anexe a foto do usuario</strong>
+							<small>PNG ou JPG com rosto nitido e frontal</small>
+						</span>
+					</label>
+
+					<label class="consent-box">
+						<input type="checkbox" name="consentimentoBiometria" value="true"
+							th:checked="${consentimentoBiometria}" required>
+						<span>
+							<strong>Consentimento biometrico</strong>
+							<small>Autorizo o uso temporario do documento e da foto apenas para esta comparacao facial.</small>
 						</span>
 					</label>
 
@@ -98,7 +122,7 @@
 								<path d="m9 12 2 2 4-5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
 							</svg>
 						</span>
-						Validar documento
+						Validar documento e biometria
 					</button>
 				</form>
 			</div>
@@ -110,7 +134,7 @@
 					</div>
 					<p class="empty-kicker">Aguardando documento</p>
 					<h2>O laudo aparece aqui assim que a IA terminar a leitura.</h2>
-					<p>Campos confirmados, divergencias e itens nao localizados ficam organizados em um painel unico.</p>
+					<p>Campos confirmados, divergencias e biometria facial ficam organizados em um painel unico.</p>
 				</div>
 
 				<div th:if="${resultado != null}" class="result-content">
@@ -136,6 +160,10 @@
 						<div>
 							<strong th:text="${resultado.extraido.confianca != null ? resultado.extraido.confianca + '%' : '0%'}">0%</strong>
 							<span>confianca IA</span>
+						</div>
+						<div>
+							<strong th:text="${resultado.extraido.biometria != null ? resultado.extraido.biometria.confiancaSegura() + '%' : '0%'}">0%</strong>
+							<span>match facial</span>
 						</div>
 					</div>
 
@@ -175,8 +203,8 @@
 				<span></span>
 				<span></span>
 			</div>
-			<p>Validando documento</p>
-			<strong>A IA esta lendo os dados e comparando as informacoes.</strong>
+			<p>Validando documento e biometria</p>
+			<strong>A IA esta lendo os dados e o CompreFace esta comparando as faces.</strong>
 			<div class="loading-steps" aria-hidden="true">
 				<span></span>
 				<span></span>

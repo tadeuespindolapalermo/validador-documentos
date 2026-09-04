@@ -34,27 +34,30 @@ public class DocumentoController {
 
 	@PostMapping("/validar")
 	public String validar(@RequestParam String nome, @RequestParam String dataNascimento, @RequestParam String cpf,
-			@RequestParam MultipartFile documento, Model model) {
+			@RequestParam MultipartFile documento, @RequestParam MultipartFile foto,
+			@RequestParam(defaultValue = "false") boolean consentimentoBiometria, Model model) {
 
 		DadosInformados dados = new DadosInformados(nome, parseData(dataNascimento), cpf);
-		List<String> erros = validarEntrada(dados, documento);
+		List<String> erros = validarEntrada(dados, documento, foto, consentimentoBiometria);
 
 		model.addAttribute("dados", dados);
 		model.addAttribute("nomeInput", nome);
 		model.addAttribute("dataNascimentoInput", dataNascimento);
 		model.addAttribute("cpfInput", cpf);
+		model.addAttribute("consentimentoBiometria", consentimentoBiometria);
 
 		if (!erros.isEmpty()) {
 			model.addAttribute("erros", erros);
-			return INDEX.concat("?error=true");
+			return INDEX;
 		}
 
-		ResultadoValidacao resultado = this.validationService.validar(dados, documento);
+		ResultadoValidacao resultado = this.validationService.validar(dados, documento, foto);
 		model.addAttribute("resultado", resultado);
 		return INDEX;
 	}
 
-	private List<String> validarEntrada(DadosInformados dados, MultipartFile documento) {
+	private List<String> validarEntrada(DadosInformados dados, MultipartFile documento, MultipartFile foto,
+			boolean consentimentoBiometria) {
 		List<String> erros = new ArrayList<>();
 
 		if (!StringUtils.hasText(dados.nome())) {
@@ -70,7 +73,16 @@ public class DocumentoController {
 			erros.add("Anexe uma foto ou PDF do RG, CNH ou CIN.");
 		}
 		else if (!tipoAceito(documento)) {
-			erros.add("Use apenas PDF, PNG, JPG, JPEG ou WEBP.");
+			erros.add("Use apenas PDF, PNG, JPG ou JPEG para o documento.");
+		}
+		if (foto == null || foto.isEmpty()) {
+			erros.add("Anexe uma foto do usuario para a validacao biometrica.");
+		}
+		else if (!imagemAceita(foto)) {
+			erros.add("Use apenas PNG, JPG ou JPEG para a foto biometrica.");
+		}
+		if (!consentimentoBiometria) {
+			erros.add("Confirme o consentimento para a validacao biometrica facial.");
 		}
 
 		return erros;
@@ -98,7 +110,18 @@ public class DocumentoController {
 			return false;
 		}
 		return switch (contentType.toLowerCase()) {
-			case "application/pdf", "image/png", "image/jpeg", "image/jpg", "image/webp" -> true;
+			case "application/pdf", "image/png", "image/jpeg", "image/jpg" -> true;
+			default -> false;
+		};
+	}
+
+	private boolean imagemAceita(MultipartFile foto) {
+		String contentType = foto.getContentType();
+		if (contentType == null) {
+			return false;
+		}
+		return switch (contentType.toLowerCase()) {
+			case "image/png", "image/jpeg", "image/jpg" -> true;
 			default -> false;
 		};
 	}
